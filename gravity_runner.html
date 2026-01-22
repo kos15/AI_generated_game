@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon SkyRun: Mobile</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Orbitron', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none; /* Prevents browser zooming/scrolling */
+        }
+
+        #game-container {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1;
+        }
+
+        /* --- UI LAYER --- */
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+            font-size: 20px;
+            font-weight: 900;
+            text-shadow: 0 0 10px #00f0ff;
+            letter-spacing: 2px;
+        }
+
+        #score-val { color: #00f0ff; }
+        #dist-val { color: #ff0099; }
+
+        /* --- MOBILE CONTROLS --- */
+        #mobile-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding: 20px;
+            padding-bottom: 40px;
+            pointer-events: auto; /* Allow clicks on buttons */
+        }
+
+        .control-btn {
+            width: 80px;
+            height: 80px;
+            background: rgba(0, 240, 255, 0.1);
+            border: 2px solid #00f0ff;
+            border-radius: 50%;
+            color: white;
+            font-size: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(4px);
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
+            transition: transform 0.1s, background 0.1s;
+            touch-action: manipulation;
+        }
+
+        .control-btn:active {
+            background: rgba(0, 240, 255, 0.4);
+            transform: scale(0.95);
+        }
+
+        #btn-jump {
+            width: 100px;
+            height: 100px;
+            border-color: #ff0099;
+            box-shadow: 0 0 15px rgba(255, 0, 153, 0.3);
+            margin-bottom: 20px; 
+        }
+
+        /* --- MENU SCREEN --- */
+        #menu-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(180deg, rgba(0,0,0,0.9), rgba(20,0,40,0.95));
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            pointer-events: auto;
+            transition: opacity 0.5s ease;
+        }
+
+        .hidden {
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+
+        h1 {
+            font-size: 40px; /* Smaller for mobile */
+            text-align: center;
+            margin: 0;
+            background: linear-gradient(90deg, #ff0099, #00f0ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            filter: drop-shadow(0 0 20px rgba(0, 240, 255, 0.6));
+            animation: pulse 2s infinite;
+        }
+
+        @media (min-width: 600px) {
+            h1 { font-size: 70px; }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .btn-start {
+            margin-top: 40px;
+            padding: 15px 40px;
+            font-size: 20px;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: bold;
+            background: rgba(0, 240, 255, 0.1);
+            color: #fff;
+            border: 2px solid #00f0ff;
+            cursor: pointer;
+            text-transform: uppercase;
+            box-shadow: 0 0 15px #00f0ff;
+        }
+
+        .controls-hint {
+            margin-top: 30px;
+            color: #888;
+            font-size: 14px;
+            text-align: center;
+            line-height: 1.5;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="hud-top">
+            <div>SCORE: <span id="score-val">0</span></div>
+            <div>DIST: <span id="dist-val">0</span>m</div>
+        </div>
+
+        <div id="mobile-controls">
+            <div class="control-btn" id="btn-left">◄</div>
+            <div class="control-btn" id="btn-jump">▲</div>
+            <div class="control-btn" id="btn-right">►</div>
+        </div>
+    </div>
+
+    <div id="menu-screen">
+        <h1>GRAVITY RUNNER</h1>
+        <button class="btn-start" id="start-btn">INITIATE LINK</button>
+        <div class="controls-hint">
+            SWIPE or TAP BUTTONS to move.<br>
+            Avoid the RED SPIKES.
+        </div>
+        <div id="final-score" style="margin-top: 20px; color: #ff0099; display: none; font-size: 24px;">SCORE: 0</div>
+    </div>
+
+    <div id="game-container"></div>
+
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.150.0/build/three.module.js';
+
+        // --- CONFIG ---
+        const LANE_WIDTH = 4.0;
+        const GRAVITY = 0.02;
+        const JUMP_FORCE = 0.55;
+        const BASE_SPEED = 0.5;
+        
+        // --- STATE ---
+        let scene, camera, renderer;
+        let playerGroup, surferModel, boardModel;
+        let obstacles = [];
+        let cityBuildings = [];
+        let floorGrid;
+        let isGameActive = false;
+        let gameSpeed = BASE_SPEED;
+        let score = 0;
+        let distance = 0;
+        
+        // Physics
+        let currentLane = 0; 
+        let targetX = 0;
+        let verticalVelocity = 0;
+        let isJumping = false;
+        let jumpBaseY = 1.5; 
+
+        // Touch Data
+        let touchStartX = 0;
+        let touchStartY = 0;
+
+        // --- DOM ---
+        const menuScreen = document.getElementById('menu-screen');
+        const startBtn = document.getElementById('start-btn');
+        const scoreEl = document.getElementById('score-val');
+        const distEl = document.getElementById('dist-val');
+        const finalScoreEl = document.getElementById('final-score');
+
+        // Buttons
+        const btnLeft = document.getElementById('btn-left');
+        const btnRight = document.getElementById('btn-right');
+        const btnJump = document.getElementById('btn-jump');
+
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x020205);
+            scene.fog = new THREE.FogExp2(0x020205, 0.025);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(65, window.innerWidth/window.innerHeight, 0.1, 300);
+            camera.position.set(0, 6, 12);
+            camera.lookAt(0, 2, -10);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.getElementById('game-container').appendChild(renderer.domElement);
+
+            // Lights
+            const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambient);
+            const sunLight = new THREE.DirectionalLight(0xff00cc, 1.5);
+            sunLight.position.set(-10, 20, 10);
+            sunLight.castShadow = true;
+            scene.add(sunLight);
+            const rimLight = new THREE.DirectionalLight(0x00f0ff, 1.0);
+            rimLight.position.set(0, 5, -20);
+            scene.add(rimLight);
+
+            // Build World
+            createEnvironment();
+            createPlayer();
+            
+            // --- INPUT LISTENERS ---
+            window.addEventListener('resize', onResize);
+            
+            // 1. Keyboard
+            document.addEventListener('keydown', onKey);
+            
+            // 2. UI Buttons
+            // Use pointerdown to be responsive on both mouse and touch without delay
+            btnLeft.addEventListener('pointerdown', (e) => { e.stopPropagation(); actionLeft(); });
+            btnRight.addEventListener('pointerdown', (e) => { e.stopPropagation(); actionRight(); });
+            btnJump.addEventListener('pointerdown', (e) => { e.stopPropagation(); actionJump(); });
+
+            // 3. Swipe / Touch Gestures (on the container, so buttons don't double trigger)
+            const gameContainer = document.getElementById('game-container');
+            gameContainer.addEventListener('touchstart', handleTouchStart, false);
+            gameContainer.addEventListener('touchend', handleTouchEnd, false);
+
+            // Menu
+            startBtn.addEventListener('click', startGame);
+
+            animate();
+        }
+
+        // --- CORE ACTIONS ---
+        function actionLeft() {
+            if(!isGameActive) return;
+            if(currentLane > -1) currentLane--;
+        }
+
+        function actionRight() {
+            if(!isGameActive) return;
+            if(currentLane < 1) currentLane++;
+        }
+
+        function actionJump() {
+            if(!isGameActive) return;
+            if(!isJumping) {
+                isJumping = true;
+                verticalVelocity = JUMP_FORCE;
+            }
+        }
+
+        // --- INPUT HANDLERS ---
+        function onKey(e) {
+            const k = e.key.toLowerCase();
+            if(k === 'a' || k === 'arrowleft') actionLeft();
+            if(k === 'd' || k === 'arrowright') actionRight();
+            if(k === 'w' || k === ' ' || k === 'arrowup') actionJump();
+        }
+
+        function handleTouchStart(e) {
+            touchStartX = e.changedTouches[0].screenX;
+            touchStartY = e.changedTouches[0].screenY;
+        }
+
+        function handleTouchEnd(e) {
+            if(!isGameActive) return;
+            
+            const touchEndX = e.changedTouches[0].screenX;
+            const touchEndY = e.changedTouches[0].screenY;
+            
+            const dx = touchEndX - touchStartX;
+            const dy = touchEndY - touchStartY;
+            
+            // Threshold to count as a swipe vs a tap
+            const threshold = 40; 
+
+            if (Math.abs(dx) > Math.abs(dy)) {
+                // Horizontal Swipe
+                if (Math.abs(dx) > threshold) {
+                    if (dx > 0) actionRight();
+                    else actionLeft();
+                }
+            } else {
+                // Vertical Swipe
+                if (Math.abs(dy) > threshold) {
+                    if (dy < 0) actionJump(); // Negative dy is UP on screen
+                }
+            }
+        }
+
+        // --- 3D ASSETS ---
+        function createPlayer() {
+            playerGroup = new THREE.Group();
+
+            // Hoverboard
+            const boardGeo = new THREE.BoxGeometry(1.5, 0.2, 3.5);
+            const boardMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.2, metalness: 0.8 });
+            boardModel = new THREE.Mesh(boardGeo, boardMat);
+            boardModel.castShadow = true;
+
+            // Neon details
+            const glowGeo = new THREE.BoxGeometry(1.6, 0.25, 0.5);
+            const glowMat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, emissive: 0x00f0ff, emissiveIntensity: 2 });
+            const thruster = new THREE.Mesh(glowGeo, glowMat);
+            thruster.position.z = 1.6;
+            boardModel.add(thruster);
+
+            // Robot Body
+            const bodyGeo = new THREE.CapsuleGeometry(0.5, 1.5, 4, 8);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1, metalness: 0.5 });
+            surferModel = new THREE.Mesh(bodyGeo, bodyMat);
+            surferModel.position.y = 1.2;
+            surferModel.castShadow = true;
+
+            // Visor
+            const visorGeo = new THREE.BoxGeometry(0.6, 0.2, 0.4);
+            const visorMat = new THREE.MeshStandardMaterial({ color: 0xff0099, emissive: 0xff0099, emissiveIntensity: 1.5 });
+            const visor = new THREE.Mesh(visorGeo, visorMat);
+            visor.position.set(0, 0.5, -0.3);
+            surferModel.add(visor);
+
+            playerGroup.add(boardModel);
+            playerGroup.add(surferModel);
+            playerGroup.position.y = jumpBaseY;
+            scene.add(playerGroup);
+        }
+
+        function createEnvironment() {
+            // Floor Grid
+            const planeGeo = new THREE.PlaneGeometry(200, 200, 40, 40);
+            planeGeo.rotateX(-Math.PI / 2);
+            const gridMat = new THREE.MeshStandardMaterial({ 
+                color: 0x000000, emissive: 0x220033, wireframe: true, transparent: true, opacity: 0.5 
+            });
+            floorGrid = new THREE.Mesh(planeGeo, gridMat);
+            floorGrid.position.z = -50;
+            scene.add(floorGrid);
+
+            // Sun
+            const sunGeo = new THREE.CircleGeometry(40, 32);
+            const sunMat = new THREE.MeshBasicMaterial({ color: 0xff0055 });
+            const sun = new THREE.Mesh(sunGeo, sunMat);
+            sun.position.set(0, 20, -150);
+            scene.add(sun);
+            
+            // Buildings
+            for(let i=0; i<40; i++) {
+                spawnBuilding(true); 
+                spawnBuilding(false);
+            }
+        }
+
+        function spawnBuilding(isLeft) {
+            const width = Math.random() * 5 + 5;
+            const height = Math.random() * 30 + 10;
+            const depth = Math.random() * 5 + 5;
+            const geo = new THREE.BoxGeometry(width, height, depth);
+            const mat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1, metalness: 0.8, emissive: 0x000022 });
+            const b = new THREE.Mesh(geo, mat);
+            const xOffset = isLeft ? -30 - Math.random()*20 : 30 + Math.random()*20;
+            const zOffset = (Math.random() * -200) + 20;
+            b.position.set(xOffset, height/2 - 10, zOffset);
+            scene.add(b);
+            cityBuildings.push(b);
+        }
+
+        function createObstacle() {
+            const lane = Math.floor(Math.random() * 3) - 1;
+            const geo = new THREE.OctahedronGeometry(1.2);
+            const mat = new THREE.MeshStandardMaterial({ 
+                color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 1.5, metalness: 0.9, roughness: 0.1 
+            });
+            const obs = new THREE.Mesh(geo, mat);
+            obs.position.set(lane * LANE_WIDTH, 1.5, -100);
+            obs.castShadow = true;
+            scene.add(obs);
+            obstacles.push(obs);
+        }
+
+        // --- GAME LOOP ---
+        function startGame() {
+            menuScreen.classList.add('hidden');
+            isGameActive = true;
+            score = 0;
+            distance = 0;
+            gameSpeed = BASE_SPEED;
+            currentLane = 0;
+            playerGroup.position.set(0, jumpBaseY, 0);
+            playerGroup.rotation.set(0,0,0);
+            obstacles.forEach(o => scene.remove(o));
+            obstacles = [];
+            scoreEl.innerText = "0";
+            distEl.innerText = "0";
+            finalScoreEl.style.display = 'none';
+        }
+
+        function gameOver() {
+            isGameActive = false;
+            menuScreen.classList.remove('hidden');
+            document.querySelector('#menu-screen h1').innerText = "SYSTEM CRITICAL";
+            document.querySelector('#start-btn').innerText = "REBOOT SYSTEM";
+            finalScoreEl.innerText = `SCORE: ${Math.floor(score)}`;
+            finalScoreEl.style.display = 'block';
+        }
+
+        function updatePhysics() {
+            // Environment Move
+            cityBuildings.forEach(b => {
+                b.position.z += gameSpeed;
+                if(b.position.z > 20) b.position.z = -180;
+            });
+            floorGrid.position.z += gameSpeed;
+            if(floorGrid.position.z > -10) floorGrid.position.z = -50;
+
+            // Player Move
+            targetX = currentLane * LANE_WIDTH;
+            playerGroup.position.x += (targetX - playerGroup.position.x) * 0.15; // Snappier
+            
+            // Tilt
+            playerGroup.rotation.z = (playerGroup.position.x - targetX) * 0.1;
+
+            // Jump
+            if(isJumping) {
+                playerGroup.position.y += verticalVelocity;
+                verticalVelocity -= GRAVITY;
+                if(playerGroup.position.y <= jumpBaseY) {
+                    playerGroup.position.y = jumpBaseY;
+                    isJumping = false;
+                    verticalVelocity = 0;
+                }
+            }
+        }
+
+        function updateObstacles() {
+            if(Math.random() < 0.03) {
+                if(obstacles.length === 0 || obstacles[obstacles.length-1].position.z > -60) createObstacle();
+            }
+
+            for(let i = obstacles.length-1; i>=0; i--) {
+                let ob = obstacles[i];
+                ob.position.z += gameSpeed;
+                ob.rotation.x += 0.05; ob.rotation.y += 0.05;
+
+                // Collision
+                let dx = Math.abs(playerGroup.position.x - ob.position.x);
+                let dz = Math.abs(playerGroup.position.z - ob.position.z);
+                if(dx < 1.2 && dz < 1.0 && playerGroup.position.y < 2.5) {
+                    gameOver();
+                }
+
+                // Clean
+                if(ob.position.z > 5) {
+                    scene.remove(ob);
+                    obstacles.splice(i, 1);
+                    score += 50;
+                    scoreEl.innerText = score;
+                }
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if(isGameActive) {
+                updatePhysics();
+                updateObstacles();
+                gameSpeed += 0.0002;
+                distance += gameSpeed;
+                distEl.innerText = Math.floor(distance);
+            }
+            renderer.render(scene, camera);
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        init();
+    </script>
+</body>
+</html>
